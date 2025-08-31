@@ -29,6 +29,9 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # Load environment variables
 load_dotenv()
+import streamlit as st
+
+groq_key = st.secrets["GROQ_API_KEY"]
 
 class Config:
     """Centralized configuration management"""
@@ -806,3 +809,4 @@ st.markdown("""
     🐘 <em>Jumbo is here for you - Your feelings are always valid and remembered</em> 💙
 </div>
 """, unsafe_allow_html=True)
+
