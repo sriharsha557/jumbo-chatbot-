@@ -28,14 +28,19 @@ logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # Load environment variables
+# Load environment variables from .env (for local dev)
 load_dotenv()
-import streamlit as st
 
-groq_key = st.secrets["GROQ_API_KEY"]
+# Prefer Streamlit Cloud secrets, fallback to local .env
+groq_key = st.secrets.get("GROQ_API_KEY", os.getenv("GROQ_API_KEY"))
+
+if not groq_key:
+    raise ValueError("❌ No GROQ_API_KEY found. Please set it in Streamlit Secrets or .env")
+
 
 class Config:
     """Centralized configuration management"""
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+    GROQ_API_KEY = groq_key
     DEFAULT_MODEL = "groq/llama-3.1-8b-instant"
     MEMORY_DIR = "./jumbo_memory"
     MAX_MEMORIES_PER_QUERY = 5
@@ -809,4 +814,3 @@ st.markdown("""
     🐘 <em>Jumbo is here for you - Your feelings are always valid and remembered</em> 💙
 </div>
 """, unsafe_allow_html=True)
-
