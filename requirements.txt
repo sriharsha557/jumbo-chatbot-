@@ -5,7 +5,7 @@ langchain-core>=0.3.75,<0.4.0
 langsmith>=0.3.45,<0.4.0
 langchain-groq>=0.3.7,<0.4.0
 crewai>=0.75.0,<1.0.0
-chromadb>=0.5.23,<0.6.0
+chromadb==0.3.29
 plotly>=5.23.0,<6.0.0
 pandas>=2.2.3,<3.0.0
 textblob>=0.18.0.post0,<0.19.0
