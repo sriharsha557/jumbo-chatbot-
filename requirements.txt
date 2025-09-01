@@ -1,20 +1,9 @@
 streamlit==1.37.1
 python-dotenv==1.0.1
-
-# LangChain ecosystem (newer, compatible set)
 langchain==0.3.9
-langchain-core==0.3.26
-langchain-groq==0.1.5
-langsmith==0.1.83
-
-# CrewAI + ChromaDB
-crewai==0.175.0
-chromadb==0.5.23
-
-# Data & viz stack (PyPI has wheels for Py 3.11)
-numpy==1.26.4
-pandas==2.2.3
+langchain-groq==0.3.7
+crewai==0.75.0
+chromadb==0.5.5
 plotly==5.23.0
-
-# NLP tools
+pandas==2.2.3
 textblob==0.18.0.post0
