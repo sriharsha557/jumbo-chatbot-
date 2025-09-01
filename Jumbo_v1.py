@@ -928,7 +928,7 @@ def display_header():
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
 
     # Try to load the GIF banner
-    gif_path = "images\Title.gif"
+    gif_path = "images/Title.gif"
     if os.path.exists(gif_path):
         try:
             with open(gif_path, "rb") as file:
@@ -1152,6 +1152,7 @@ def display_footer():
 if __name__ == "__main__":
     main()
     display_footer()
+
 
 
 
