@@ -1,9 +1,14 @@
 streamlit==1.37.1
 python-dotenv==1.0.1
-langchain
-langchain-groq
+
+# LangChain ecosystem (compatible versions)
+langchain==0.3.7
+langchain-groq==0.3.7
+
+# CrewAI requires newer chromadb
 crewai==0.175.0
-chromadb==0.5.5
+chromadb==0.5.23
+
 plotly==5.23.0
 pandas==2.2.3
 textblob==0.18.0.post0
