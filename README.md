@@ -23,7 +23,7 @@ It uses LLMs (via LangChain + Groq) to provide supportive conversations, mood tr
 ```
 
 jumbo-chatbot/
-│-- app.py              # Main Streamlit app
+│-- Jumbo_v1.py         # Main Streamlit app
 │-- requirements.txt    # Python dependencies
 │-- .env.example        # Example of environment variables
 │-- README.md           # Project documentation
