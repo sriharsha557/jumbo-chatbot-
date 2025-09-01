@@ -8,7 +8,7 @@ langsmith>=0.3.45,<0.4.0
 langchain-groq>=0.3.7,<0.4.0
 
 # CrewAI (latest stable)
-crewai>=0.75.0,<1.0.0
+crewai<0.11
 
 # Vector DB (no sqlite dependency)
 faiss-cpu>=1.8.0,<2.0.0
