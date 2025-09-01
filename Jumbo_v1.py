@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import hashlib
 import time
+import pickle
+import numpy as np
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from crewai import Agent, Task, Crew, Process
@@ -73,6 +75,7 @@ class Config:
     REQUEST_TIMEOUT = 30
     MAX_RETRIES = 3
     CACHE_TTL = 300  # 5 minutes
+    EMBEDDING_DIM = 384  # Dimension for sentence embeddings
 
 MOOD_KEYWORDS = {
     "happy": ["happy", "good", "great", "wonderful", "amazing", "fantastic", "excellent", "joy", "joyful", "elated", "thrilled", "overjoyed", "blessed", "grateful", "content", "cheerful"],
@@ -235,53 +238,125 @@ def make_llm(groq_api_key: str, model: str = "groq/llama-3.1-8b-instant") -> Cha
         timeout=None
     )
 
+def simple_text_embedding(text: str, dim: int = 384) -> np.ndarray:
+    """
+    Create a simple text embedding using basic text features
+    This is a fallback when proper sentence embeddings aren't available
+    """
+    # Convert text to lowercase and split into words
+    words = text.lower().split()
+    
+    # Create a hash-based embedding
+    embedding = np.zeros(dim)
+    
+    for i, word in enumerate(words):
+        # Use hash of word to create pseudo-random but consistent features
+        word_hash = hash(word) % dim
+        embedding[word_hash] += 1.0 / (i + 1)  # Weight by position
+    
+    # Add some basic text statistics
+    embedding[0] = len(words)  # Word count
+    embedding[1] = len(text)   # Character count
+    embedding[2] = len(set(words))  # Unique word count
+    
+    # Normalize
+    norm = np.linalg.norm(embedding)
+    if norm > 0:
+        embedding = embedding / norm
+    
+    return embedding.astype('float32')
+
 class EnhancedJumboMemory:
-    """Enhanced memory system with better data management and analytics"""
+    """Enhanced memory system using FAISS for vector storage"""
     def __init__(self, user_id: str = "default_user"):
         self.user_id = user_id
-        self.collection_name = f"jumbo_memory_{hashlib.md5(user_id.encode()).hexdigest()}"
+        self.memory_dir = Config.MEMORY_DIR
+        self.embedding_dim = Config.EMBEDDING_DIM
+        
+        # Create memory directory
+        os.makedirs(self.memory_dir, exist_ok=True)
+        
+        # File paths for this user
+        self.user_hash = hashlib.md5(user_id.encode()).hexdigest()[:8]
+        self.index_path = os.path.join(self.memory_dir, f"faiss_index_{self.user_hash}.index")
+        self.metadata_path = os.path.join(self.memory_dir, f"metadata_{self.user_hash}.pkl")
+        self.user_info_path = os.path.join(self.memory_dir, f"user_info_{self.user_hash}.json")
+        
+        # Initialize FAISS index
         try:
-            os.makedirs(Config.MEMORY_DIR, exist_ok=True)
-            self.client = faiss.IndexFlatL2(Settings(
-                persist_directory=Config.MEMORY_DIR,
-                is_persistent=True
-            ))
-            try:
-                self.collection = self.client.create_collection(
-                    name=self.collection_name,
-                    metadata={"hnsw:space": "cosine"}
-                )
-            except Exception:
-                self.collection = self.client.get_collection(name=self.collection_name)
+            if os.path.exists(self.index_path):
+                self.index = faiss.read_index(self.index_path)
+                logger.info(f"Loaded existing FAISS index with {self.index.ntotal} vectors")
+            else:
+                self.index = faiss.IndexFlatL2(self.embedding_dim)
+                logger.info("Created new FAISS index")
+            
+            # Load metadata
+            if os.path.exists(self.metadata_path):
+                with open(self.metadata_path, 'rb') as f:
+                    self.metadata = pickle.load(f)
+            else:
+                self.metadata = []
+                
+            # Load user info
+            if os.path.exists(self.user_info_path):
+                with open(self.user_info_path, 'r') as f:
+                    self.user_info = json.load(f)
+            else:
+                self.user_info = {}
+                
         except Exception as e:
             logger.error(f"Failed to initialize memory system: {e}")
-            raise
+            # Create fresh instances
+            self.index = faiss.IndexFlatL2(self.embedding_dim)
+            self.metadata = []
+            self.user_info = {}
+
+    def _save_to_disk(self):
+        """Save index and metadata to disk"""
+        try:
+            faiss.write_index(self.index, self.index_path)
+            with open(self.metadata_path, 'wb') as f:
+                pickle.dump(self.metadata, f)
+            with open(self.user_info_path, 'w') as f:
+                json.dump(self.user_info, f)
+        except Exception as e:
+            logger.error(f"Failed to save memory to disk: {e}")
 
     def store_conversation(self, user_message: str, jumbo_response: str, mood: str, 
                           confidence: float, user_name: str = None) -> bool:
         """Store conversation with enhanced metadata"""
         try:
-            conversation_id = hashlib.md5(
-                f"{datetime.now().isoformat()}{user_message}".encode()
-            ).hexdigest()
+            conversation_text = f"User: {user_message}\nJumbo: {jumbo_response}"
+            
+            # Create embedding
+            embedding = simple_text_embedding(conversation_text, self.embedding_dim)
+            
+            # Create metadata
             metadata = {
                 "timestamp": datetime.now().isoformat(),
                 "mood": mood,
                 "confidence": confidence,
                 "type": "conversation",
                 "message_length": len(user_message),
-                "response_length": len(jumbo_response)
+                "response_length": len(jumbo_response),
+                "user_message": user_message,
+                "jumbo_response": jumbo_response
             }
             if user_name:
                 metadata["user_name"] = user_name
-            self.collection.add(
-                documents=[f"User: {user_message}\nJumbo: {jumbo_response}"],
-                metadatas=[metadata],
-                ids=[conversation_id]
-            )
-            # Cleanup old conversations
+            
+            # Add to FAISS index
+            self.index.add(embedding.reshape(1, -1))
+            self.metadata.append(metadata)
+            
+            # Save to disk
+            self._save_to_disk()
+            
+            # Cleanup old memories
             self._cleanup_old_memories()
             return True
+            
         except Exception as e:
             logger.error(f"Failed to store conversation: {e}")
             return False
@@ -290,71 +365,116 @@ class EnhancedJumboMemory:
         """Clean up old memories to prevent database bloat"""
         try:
             cutoff_date = datetime.now() - timedelta(days=Config.MEMORY_CLEANUP_DAYS)
-            # This is a simplified cleanup - in production, you'd implement more sophisticated cleanup
-            pass
+            cutoff_str = cutoff_date.isoformat()
+            
+            # Find indices to keep
+            indices_to_keep = []
+            new_metadata = []
+            
+            for i, meta in enumerate(self.metadata):
+                if meta.get("timestamp", "") >= cutoff_str:
+                    indices_to_keep.append(i)
+                    new_metadata.append(meta)
+            
+            # If we need to remove some memories
+            if len(indices_to_keep) < len(self.metadata):
+                logger.info(f"Cleaning up {len(self.metadata) - len(indices_to_keep)} old memories")
+                
+                # Rebuild index with only recent memories
+                if indices_to_keep:
+                    # Get vectors for indices to keep
+                    vectors = []
+                    for i in indices_to_keep:
+                        vector = self.index.reconstruct(i)
+                        vectors.append(vector)
+                    
+                    # Create new index
+                    new_index = faiss.IndexFlatL2(self.embedding_dim)
+                    if vectors:
+                        vectors_array = np.array(vectors).astype('float32')
+                        new_index.add(vectors_array)
+                    
+                    self.index = new_index
+                    self.metadata = new_metadata
+                    self._save_to_disk()
+                else:
+                    # No memories to keep - reset everything
+                    self.index = faiss.IndexFlatL2(self.embedding_dim)
+                    self.metadata = []
+                    self._save_to_disk()
+                    
         except Exception as e:
             logger.warning(f"Memory cleanup failed: {e}")
 
     def store_user_info(self, info_type: str, info_value: str):
         """Store specific user information like name"""
-        info_id = f"{self.user_id}_{info_type}"
         try:
-            existing = self.collection.get(ids=[info_id])
-            if existing['ids']:
-                self.collection.update(
-                    ids=[info_id],
-                    documents=[f"{info_type}: {info_value}"],
-                    metadatas=[{
-                        "timestamp": datetime.now().isoformat(),
-                        "type": "user_info",
-                        "info_type": info_type
-                    }]
-                )
-            else:
-                raise Exception("Not found")
-        except Exception:
-            self.collection.add(
-                documents=[f"{info_type}: {info_value}"],
-                metadatas=[{
-                    "timestamp": datetime.now().isoformat(),
-                    "type": "user_info",
-                    "info_type": info_type
-                }],
-                ids=[info_id]
-            )
+            self.user_info[info_type] = {
+                "value": info_value,
+                "timestamp": datetime.now().isoformat()
+            }
+            self._save_to_disk()
+        except Exception as e:
+            logger.error(f"Failed to store user info: {e}")
 
     def get_user_name(self) -> Optional[str]:
         """Retrieve user's name if stored"""
         try:
-            info_id = f"{self.user_id}_name"
-            result = self.collection.get(ids=[info_id])
-            if result['ids']:
-                document = result['documents'][0]
-                return document.split(": ")[1] if ": " in document else None
-        except Exception:
-            pass
+            name_info = self.user_info.get("name")
+            if name_info:
+                return name_info["value"]
+        except Exception as e:
+            logger.error(f"Failed to get user name: {e}")
         return None
 
     def get_relevant_memories(self, query: str, limit: int = 5) -> List[Dict]:
         """Retrieve relevant past conversations"""
         try:
-            results = self.collection.query(
-                query_texts=[query],
-                n_results=limit,
-                where={"type": "conversation"}
-            )
+            if self.index.ntotal == 0:
+                return []
+            
+            # Create query embedding
+            query_embedding = simple_text_embedding(query, self.embedding_dim)
+            
+            # Search for similar conversations
+            k = min(limit, self.index.ntotal)
+            distances, indices = self.index.search(query_embedding.reshape(1, -1), k)
+            
             memories = []
-            if results['documents'] and results['documents'][0]:
-                for i, doc in enumerate(results['documents'][0]):
-                    memories.append({
-                        "content": doc,
-                        "metadata": results['metadatas'][0][i] if results['metadatas'] and results['metadatas'][0] else {},
-                        "distance": results['distances'][0][i] if results['distances'] and results['distances'][0] else 1.0
-                    })
+            for i, (distance, idx) in enumerate(zip(distances[0], indices[0])):
+                if idx < len(self.metadata):
+                    memory_data = self.metadata[idx].copy()
+                    memory_data["distance"] = float(distance)
+                    memory_data["similarity"] = 1.0 / (1.0 + distance)  # Convert distance to similarity
+                    memories.append(memory_data)
+            
+            # Sort by similarity (higher is better)
+            memories.sort(key=lambda x: x["similarity"], reverse=True)
             return memories
+            
         except Exception as e:
             logger.error(f"Error retrieving memories: {e}")
             return []
+
+    def clear_memory(self) -> bool:
+        """Clear all stored memories and user info"""
+        try:
+            # Reset index
+            self.index = faiss.IndexFlatL2(self.embedding_dim)
+            self.metadata = []
+            self.user_info = {}
+            
+            # Remove files
+            for path in [self.index_path, self.metadata_path, self.user_info_path]:
+                if os.path.exists(path):
+                    os.remove(path)
+            
+            logger.info("Memory cleared successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to clear memory: {e}")
+            return False
 
 class EnhancedJumboCrew:
     """Enhanced emotional wellness chatbot with improved error handling and caching"""
@@ -443,7 +563,9 @@ You have perfect memory of past conversations and can reference them to provide 
             if relevant_memories:
                 memory_context = "\n\nRelevant past conversations:\n"
                 for memory in relevant_memories[:2]:
-                    memory_context += f"- {memory['content'][:200]}...\n"
+                    user_msg = memory.get('user_message', '')[:100]
+                    jumbo_resp = memory.get('jumbo_response', '')[:100]
+                    memory_context += f"- User: {user_msg}... | Jumbo: {jumbo_resp}...\n"
             for attempt in range(max_retries):
                 try:
                     response = self._generate_response(
@@ -609,7 +731,7 @@ You have perfect memory of past conversations and can reference them to provide 
             f"I hear you{name_part}, and I want you to know that your feelings are valid. What's been on your mind lately?",
             f"Thank you for sharing that with me{name_part}. Your thoughts and feelings matter. What's been weighing on you?"
         ])
-        return random.choice(responses) + " 🐘💙"
+        return random.choice(responses)
 
 # API Key validation and UI setup
 def setup_api_key_ui():
@@ -842,6 +964,13 @@ def display_sidebar():
             else:
                 st.info("Jumbo doesn't know your name yet. Try introducing yourself!")
 
+            # Memory stats
+            try:
+                memory_count = st.session_state.crew.memory.index.ntotal
+                st.info(f"Stored memories: **{memory_count}**")
+            except:
+                st.info("Stored memories: **0**")
+
             st.markdown("---")
             
             # API Key status
@@ -870,9 +999,7 @@ def clear_memory():
     """Clear memory with proper error handling"""
     try:
         if st.session_state.crew and st.session_state.crew.memory:
-            collection_name = st.session_state.crew.memory.collection_name
-            st.session_state.crew.memory.client.delete_collection(collection_name)
-            return True
+            return st.session_state.crew.memory.clear_memory()
     except Exception as e:
         logger.error(f"Error clearing memory: {e}")
         return False
@@ -1000,7 +1127,7 @@ def start_new_topic():
     if st.session_state.crew:
         user_name = st.session_state.crew.memory.get_user_name()
         name_part = f" {user_name}" if user_name else ""
-        response = f"What else is on your mind{name_part}? I'm here to listen to whatever you'd like to share. 🐘💙"
+        response = f"What else is on your mind{name_part}? I'm here to listen to whatever you'd like to share."
         st.session_state.messages.append({"role": "assistant", "content": response})
         st.rerun()
 
@@ -1011,7 +1138,7 @@ def display_footer():
     st.markdown("---")
     st.markdown("""
     <div style='text-align: center; color: #2c3e50; opacity: 0.7; padding: 10px;'>
-        🐘 <em>Jumbo is here for you - Your feelings are always valid and remembered</em> 💙
+        🐘 <em>Jumbo is here for you - Your feelings are always valid and remembered</em>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1019,4 +1146,3 @@ def display_footer():
 if __name__ == "__main__":
     main()
     display_footer()
-
