@@ -27,16 +27,39 @@ logger = logging.getLogger(__name__)
 # Keep warnings quiet
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-# Load environment variables
-# Load environment variables from .env (for local dev)
-load_dotenv()
+# Enhanced API key management
+def get_api_key():
+    """
+    Get API key from multiple sources with proper fallback
+    Priority: Streamlit Secrets -> Environment Variable -> .env file
+    """
+    # Load environment variables from .env file (for local development)
+    load_dotenv()
+    
+    api_key = None
+    
+    # 1. Try Streamlit Secrets first (for deployed apps)
+    try:
+        if hasattr(st, 'secrets') and 'GROQ_API_KEY' in st.secrets:
+            api_key = st.secrets['GROQ_API_KEY']
+            logger.info("✅ API key loaded from Streamlit Secrets")
+    except Exception as e:
+        logger.warning(f"Could not access Streamlit secrets: {e}")
+    
+    # 2. Fallback to environment variable
+    if not api_key:
+        api_key = os.getenv('GROQ_API_KEY')
+        if api_key:
+            logger.info("✅ API key loaded from environment variable")
+    
+    # 3. Check if key is valid
+    if not api_key or api_key.strip() == "" or api_key == "your_api_key_here":
+        return None
+    
+    return api_key.strip()
 
-# Prefer Streamlit Cloud secrets, fallback to local .env
-groq_key = st.secrets.get("GROQ_API_KEY", os.getenv("GROQ_API_KEY"))
-
-if not groq_key:
-    raise ValueError("❌ No GROQ_API_KEY found. Please set it in Streamlit Secrets or .env")
-
+# Get the API key
+groq_key = get_api_key()
 
 class Config:
     """Centralized configuration management"""
@@ -264,6 +287,15 @@ class EnhancedJumboMemory:
             logger.error(f"Failed to store conversation: {e}")
             return False
 
+    def _cleanup_old_memories(self):
+        """Clean up old memories to prevent database bloat"""
+        try:
+            cutoff_date = datetime.now() - timedelta(days=Config.MEMORY_CLEANUP_DAYS)
+            # This is a simplified cleanup - in production, you'd implement more sophisticated cleanup
+            pass
+        except Exception as e:
+            logger.warning(f"Memory cleanup failed: {e}")
+
     def store_user_info(self, info_type: str, info_value: str):
         """Store specific user information like name"""
         info_id = f"{self.user_id}_{info_type}"
@@ -298,7 +330,7 @@ class EnhancedJumboMemory:
             info_id = f"{self.user_id}_name"
             result = self.collection.get(ids=[info_id])
             if result['ids']:
-                document = result['documents']
+                document = result['documents'][0]
                 return document.split(": ")[1] if ": " in document else None
         except Exception:
             pass
@@ -313,16 +345,16 @@ class EnhancedJumboMemory:
                 where={"type": "conversation"}
             )
             memories = []
-            if results['documents'] and results['documents']:
-                for i, doc in enumerate(results['documents']):
+            if results['documents'] and results['documents'][0]:
+                for i, doc in enumerate(results['documents'][0]):
                     memories.append({
                         "content": doc,
-                        "metadata": results['metadatas'][i] if results['metadatas'] and results['metadatas'] else {},
-                        "distance": results['distances'][i] if results['distances'] and results['distances'] else 1.0
+                        "metadata": results['metadatas'][0][i] if results['metadatas'] and results['metadatas'][0] else {},
+                        "distance": results['distances'][0][i] if results['distances'] and results['distances'][0] else 1.0
                     })
             return memories
         except Exception as e:
-            print(f"Error retrieving memories: {e}")
+            logger.error(f"Error retrieving memories: {e}")
             return []
 
 class EnhancedJumboCrew:
@@ -436,6 +468,8 @@ You have perfect memory of past conversations and can reference them to provide 
         except Exception as e:
             logger.error(f"Response generation failed: {e}")
             response_metadata["error"] = str(e)
+            detected_mood, _ = enhanced_mood_detection(user_message)
+            user_name = self.memory.get_user_name()
             response = self._get_fallback_response(detected_mood, user_name)
             self.memory.store_conversation(
                 user_message, response, detected_mood, confidence, user_name
@@ -578,6 +612,57 @@ You have perfect memory of past conversations and can reference them to provide 
         ])
         return random.choice(responses) + " 🐘💙"
 
+# API Key validation and UI setup
+def setup_api_key_ui():
+    """Setup API key validation and input UI"""
+    if not groq_key:
+        st.error("🔑 **API Key Required**")
+        st.markdown("""
+        To use Jumbo, you need a GROQ API key. Here's how to set it up:
+
+        **For Streamlit Cloud deployment:**
+        1. Go to your Streamlit Cloud app settings
+        2. Click on "Secrets" in the sidebar
+        3. Add your key like this:
+        ```
+        GROQ_API_KEY = "your_api_key_here"
+        ```
+
+        **For local development:**
+        1. Create a `.env` file in your project directory
+        2. Add your key like this:
+        ```
+        GROQ_API_KEY=your_api_key_here
+        ```
+        
+        **Get your API key:**
+        1. Visit [Groq Console](https://console.groq.com/)
+        2. Create an account and get your free API key
+        3. Add it using one of the methods above
+        """)
+        
+        st.markdown("---")
+        st.markdown("**Or enter your API key temporarily:**")
+        
+        temp_key = st.text_input(
+            "Enter your GROQ API Key:",
+            type="password",
+            placeholder="gsk_...",
+            help="This will only be used for this session and won't be saved."
+        )
+        
+        if temp_key and temp_key.strip():
+            # Validate the key format
+            if temp_key.startswith('gsk_') and len(temp_key) > 20:
+                st.session_state.temp_api_key = temp_key.strip()
+                st.success("✅ API key accepted! Please refresh the page to start using Jumbo.")
+                st.rerun()
+            else:
+                st.error("❌ Invalid API key format. GROQ keys typically start with 'gsk_'")
+        return False
+    return True
+
+# CSS Styling
 st.markdown("""
 <style>
     .stApp {
@@ -645,15 +730,26 @@ st.markdown("""
         margin: 10px 0;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
+
+    .api-key-container {
+        background: rgba(255, 255, 255, 0.95);
+        padding: 25px;
+        border-radius: 15px;
+        margin: 20px 0;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        border-left: 5px solid #74b9ff;
+    }
 </style>
 """, unsafe_allow_html=True)
 
+# Page configuration
 st.set_page_config(
     page_title="Jumbo - Your Emotional Assistant with Memory",
     page_icon="🐘",
     layout="centered"
 )
 
+# Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "crew" not in st.session_state:
@@ -662,33 +758,68 @@ if "started" not in st.session_state:
     st.session_state.started = False
 if "user_id" not in st.session_state:
     st.session_state.user_id = f"user_{hash(str(st.session_state)) % 10000}"
+if "temp_api_key" not in st.session_state:
+    st.session_state.temp_api_key = None
 
-if st.session_state.crew is None:
-    api_key = os.getenv("GROQ_API_KEY") or "your_api_key_here"
-    if api_key and api_key != "your_api_key_here":
+# Main application logic
+def main():
+    """Main application function"""
+    
+    # Check if API key is available
+    current_api_key = groq_key or st.session_state.get('temp_api_key')
+    
+    if not current_api_key:
+        if not setup_api_key_ui():
+            return
+    
+    # Initialize Jumbo crew if not already done
+    if st.session_state.crew is None:
         try:
-            st.session_state.crew = EnhancedJumboCrew(groq_api_key=api_key, user_id=st.session_state.user_id)
+            with st.spinner("🐘 Initializing Jumbo..."):
+                st.session_state.crew = EnhancedJumboCrew(
+                    groq_api_key=current_api_key, 
+                    user_id=st.session_state.user_id
+                )
+                st.success("✅ Jumbo is ready!")
+                time.sleep(1)  # Brief pause to show success message
         except Exception as e:
-            st.error(f"Error initializing Jumbo: {e}")
-            st.info("Please set your GROQ_API_KEY environment variable or add chromadb: `pip install chromadb`")
-            st.stop()
+            st.error(f"❌ Error initializing Jumbo: {e}")
+            st.info("Please check your API key and try refreshing the page.")
+            return
+
+    # Display header with GIF or fallback
+    display_header()
+
+    # Sidebar with memory information
+    display_sidebar()
+
+    # Main chat interface
+    display_chat_interface()
+
+def display_header():
+    """Display the main header with GIF or fallback"""
+    st.markdown('<div class="main-container">', unsafe_allow_html=True)
+
+    # Try to load the GIF banner
+    gif_path = r"D:\MOOD\CODE\images\Title.gif"
+    if os.path.exists(gif_path):
+        try:
+            with open(gif_path, "rb") as file:
+                gif_data = base64.b64encode(file.read()).decode()
+                st.markdown(f"""
+                <div style="text-align: center; margin: -20px -20px 10px -20px; height: 200px; overflow: hidden; border-radius: 10px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); position: relative;">
+                    <img src="data:image/gif;base64,{gif_data}" 
+                         style="width: 100%; height: auto; display: block; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);" />
+                </div>
+                """, unsafe_allow_html=True)
+        except Exception as e:
+            logger.warning(f"Could not load GIF: {e}")
+            display_fallback_header()
     else:
-        st.error("Please set your GROQ_API_KEY environment variable")
-        st.stop()
+        display_fallback_header()
 
-st.markdown('<div class="main-container">', unsafe_allow_html=True)
-
-gif_path = r"D:\MOOD\CODE\images\Title.gif"
-if os.path.exists(gif_path):
-    with open(gif_path, "rb") as file:
-        gif_data = base64.b64encode(file.read()).decode()
-        st.markdown(f"""
-        <div style="text-align: center; margin: -20px -20px 10px -20px; height: 200px; overflow: hidden; border-radius: 10px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); position: relative;">
-            <img src="data:image/gif;base64,{gif_data}" 
-                 style="width: 100%; height: auto; display: block; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);" />
-        </div>
-        """, unsafe_allow_html=True)
-else:
+def display_fallback_header():
+    """Display fallback header when GIF is not available"""
     st.markdown("""
     <div style="text-align: center; padding: 40px; background: linear-gradient(135deg, #a8e6cf 0%, #7fcdcd 100%); border-radius: 10px; margin-bottom: 20px;">
         <h1 style="color: #2c3e50; font-size: 3rem;">🐘 Jumbo</h1>
@@ -696,44 +827,89 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-if st.session_state.crew:
-    with st.sidebar:
-        st.markdown("""
-        <div class="memory-info">
-            <h3 style="color: #2c3e50;">🧠 Memory Status</h3>
-        </div>
-        """, unsafe_allow_html=True)
+def display_sidebar():
+    """Display sidebar with memory information and controls"""
+    if st.session_state.crew:
+        with st.sidebar:
+            st.markdown("""
+            <div class="memory-info">
+                <h3 style="color: #2c3e50;">🧠 Memory Status</h3>
+            </div>
+            """, unsafe_allow_html=True)
 
-        user_name = st.session_state.crew.memory.get_user_name()
-        if user_name:
-            st.success(f"Jumbo remembers: **{user_name}** 😊")
-        else:
-            st.info("Jumbo doesn't know your name yet. Try introducing yourself!")
+            user_name = st.session_state.crew.memory.get_user_name()
+            if user_name:
+                st.success(f"Jumbo remembers: **{user_name}** 😊")
+            else:
+                st.info("Jumbo doesn't know your name yet. Try introducing yourself!")
 
-        if st.button("🗑️ Clear Memory"):
-            try:
-                collection_name = f"jumbo_memory_{st.session_state.user_id}"
-                st.session_state.crew.memory.client.delete_collection(collection_name)
-                st.success("Memory cleared! 🧹")
+            st.markdown("---")
+            
+            # API Key status
+            if groq_key:
+                st.success("🔑 API Key: Loaded from secrets")
+            elif st.session_state.get('temp_api_key'):
+                st.warning("🔑 API Key: Temporary session key")
+            
+            st.markdown("---")
+
+            if st.button("🗑️ Clear Memory", help="Clear all stored conversations and user information"):
+                if clear_memory():
+                    st.success("Memory cleared! 🧹")
+                    st.rerun()
+                else:
+                    st.error("Error clearing memory")
+
+            if st.button("🔄 Restart Jumbo", help="Reinitialize Jumbo (useful if there are issues)"):
+                st.session_state.crew = None
+                st.session_state.messages = []
+                st.session_state.started = False
+                st.success("Jumbo restarted! 🐘")
                 st.rerun()
-            except Exception:
-                st.error("Error clearing memory")
 
-if not st.session_state.started:
+def clear_memory():
+    """Clear memory with proper error handling"""
+    try:
+        if st.session_state.crew and st.session_state.crew.memory:
+            collection_name = st.session_state.crew.memory.collection_name
+            st.session_state.crew.memory.client.delete_collection(collection_name)
+            return True
+    except Exception as e:
+        logger.error(f"Error clearing memory: {e}")
+        return False
+
+def display_chat_interface():
+    """Display the main chat interface"""
+    if not st.session_state.started:
+        display_welcome_screen()
+    else:
+        display_conversation()
+
+def display_welcome_screen():
+    """Display the initial welcome screen"""
     with st.container():
         col1, col2 = st.columns([1, 3])
+        
         with col1:
-            gif_path = r"D:\MOOD\CODE\images\elephant.gif"
-            with open(gif_path, "rb") as f:
-                gif_bytes = f.read()
-                b64_gif = base64.b64encode(gif_bytes).decode()
-
-            st.markdown(
-                f'<div style="text-align: center;">'
-                f'<img src="data:image/gif;base64,{b64_gif}" width="400" />'
-                f'</div>',
-                unsafe_allow_html=True
-            )
+            # Try to load elephant GIF
+            elephant_gif_path = r"D:\MOOD\CODE\images\elephant.gif"
+            if os.path.exists(elephant_gif_path):
+                try:
+                    with open(elephant_gif_path, "rb") as f:
+                        gif_bytes = f.read()
+                        b64_gif = base64.b64encode(gif_bytes).decode()
+                    
+                    st.markdown(
+                        f'<div style="text-align: center;">'
+                        f'<img src="data:image/gif;base64,{b64_gif}" width="400" />'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                except Exception:
+                    st.markdown('<div style="text-align: center; font-size: 200px;">🐘</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div style="text-align: center; font-size: 200px;">🐘</div>', unsafe_allow_html=True)
+        
         with col2:
             user_name = st.session_state.crew.memory.get_user_name() if st.session_state.crew else None
             greeting = f"Hi {user_name}, I'm Jumbo!" if user_name else "Hi, I'm Jumbo!"
@@ -744,25 +920,24 @@ if not st.session_state.started:
                 </p>
                 <h3 style="color: #2c3e50; margin-top: 30px;">How are you feeling today?</h3>
             """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    user_input = st.text_area("Tell me what's on your mind...", 
-                             height=100, 
-                             placeholder="I'm feeling... / Today I... / I need help with... / My name is...")
-    if st.button("Share with Jumbo 🐘"):
+
+    # Welcome input section
+    st.markdown('<div class="input-section">', unsafe_allow_html=True)
+    user_input = st.text_area(
+        "Tell me what's on your mind...", 
+        height=100, 
+        placeholder="I'm feeling... / Today I... / I need help with... / My name is...",
+        key="welcome_input"
+    )
+    
+    if st.button("Share with Jumbo 🐘", key="share_welcome"):
         if user_input and user_input.strip():
-            st.session_state.started = True
-            st.session_state.messages.append({"role": "user", "content": user_input})
-            try:
-                response, _ = st.session_state.crew.respond(user_input)
-                st.session_state.messages.append({"role": "assistant", "content": response})
-            except Exception as e:
-                mood, _ = enhanced_mood_detection(user_input)
-                fallback_response = f"Thank you for sharing that with me. I can sense you're feeling {mood}. I'm here to support you through this. What would help you feel better right now? 🐘💙"
-                st.session_state.messages.append({"role": "assistant", "content": fallback_response})
-            st.rerun()
+            handle_user_message(user_input)
     st.markdown('</div>', unsafe_allow_html=True)
 
-if st.session_state.started:
+def display_conversation():
+    """Display the ongoing conversation"""
+    # Display message history
     for message in st.session_state.messages:
         if message["role"] == "user":
             st.markdown(f"""
@@ -776,41 +951,72 @@ if st.session_state.started:
                 <strong>🐘 Jumbo:</strong> {message["content"]}
             </div>
             """, unsafe_allow_html=True)
+    
+    # Input section for continuing conversation
     st.markdown('<div class="input-section">', unsafe_allow_html=True)
     st.markdown("**Continue the conversation:**")
-    new_input = st.text_area("What else would you like to share?", 
-                            height=80, 
-                            key="continuing_chat")
+    new_input = st.text_area(
+        "What else would you like to share?", 
+        height=80, 
+        key="continuing_chat"
+    )
+    
     col1, col2 = st.columns([1, 4])
     with col1:
         if st.button("Send 💬"):
             if new_input and new_input.strip():
-                st.session_state.messages.append({"role": "user", "content": new_input})
-                try:
-                    response, _ = st.session_state.crew.respond(new_input)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
-                except Exception as e:
-                    fallback_responses = [
-                        "I hear you, and I want you to know that your feelings are valid. Tell me more about what you're experiencing. 🐘",
-                        "Thank you for trusting me with your thoughts. I'm here to support you. What's weighing on your heart? 💙",
-                        "I can sense this is important to you. I'm listening with my whole heart. What do you need right now? 🐘"
-                    ]
-                    response = random.choice(fallback_responses)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
-                st.rerun()
+                handle_user_message(new_input)
+    
     with col2:
         if st.button("New Topic 🔄"):
-            user_name = st.session_state.crew.memory.get_user_name() if st.session_state.crew else None
-            name_part = f" {user_name}" if user_name else ""
-            response = f"What else is on your mind{name_part}? I'm here to listen to whatever you'd like to share. 🐘💙"
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            st.rerun()
+            start_new_topic()
+    
     st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('</div>', unsafe_allow_html=True)
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: #2c3e50; opacity: 0.7; padding: 10px;'>
-    🐘 <em>Jumbo is here for you - Your feelings are always valid and remembered</em> 💙
-</div>
-""", unsafe_allow_html=True)
+def handle_user_message(user_input: str):
+    """Handle user message and generate response"""
+    if not st.session_state.crew:
+        st.error("Jumbo is not initialized. Please refresh the page.")
+        return
+    
+    st.session_state.started = True
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    
+    try:
+        with st.spinner("🐘 Jumbo is thinking..."):
+            response, metadata = st.session_state.crew.respond(user_input)
+            st.session_state.messages.append({"role": "assistant", "content": response})
+    except Exception as e:
+        logger.error(f"Error generating response: {e}")
+        # Generate fallback response
+        mood, _ = enhanced_mood_detection(user_input)
+        user_name = st.session_state.crew.memory.get_user_name()
+        fallback_response = st.session_state.crew._get_fallback_response(mood, user_name)
+        st.session_state.messages.append({"role": "assistant", "content": fallback_response})
+    
+    st.rerun()
+
+def start_new_topic():
+    """Start a new topic in the conversation"""
+    if st.session_state.crew:
+        user_name = st.session_state.crew.memory.get_user_name()
+        name_part = f" {user_name}" if user_name else ""
+        response = f"What else is on your mind{name_part}? I'm here to listen to whatever you'd like to share. 🐘💙"
+        st.session_state.messages.append({"role": "assistant", "content": response})
+        st.rerun()
+
+# Footer
+def display_footer():
+    """Display the footer"""
+    st.markdown('</div>', unsafe_allow_html=True)  # Close main container
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; color: #2c3e50; opacity: 0.7; padding: 10px;'>
+        🐘 <em>Jumbo is here for you - Your feelings are always valid and remembered</em> 💙
+    </div>
+    """, unsafe_allow_html=True)
+
+# Run the application
+if __name__ == "__main__":
+    main()
+    display_footer()
