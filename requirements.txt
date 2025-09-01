@@ -1,0 +1,27 @@
+Perfect 👍 since you’re using **Streamlit Secrets** for the API key, your `requirements.txt` just needs to list the Python packages required for your app.
+
+Here’s a clean `requirements.txt` for your code:
+
+```txt
+streamlit
+python-dotenv
+langchain-groq
+crewai
+chromadb
+plotly
+pandas
+textblob
+```
+
+---
+
+### 🔍 Notes:
+
+* `streamlit` → runs your app.
+* `python-dotenv` → loads `.env` files locally (won’t be needed on Streamlit Cloud, but safe to keep).
+* `langchain-groq` → for Groq integration.
+* `crewai` → your agent framework.
+* `chromadb` → for vector DB.
+* `plotly` → for charts (`express` + `graph_objects`).
+* `pandas` → data handling.
+* `textblob` → sentiment analysis.
