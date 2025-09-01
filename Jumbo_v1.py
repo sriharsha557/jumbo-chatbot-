@@ -1,3 +1,9 @@
+import sys
+try:
+    __import__("pysqlite3")
+    sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+except ImportError:
+    pass
 import streamlit as st
 import os
 import warnings
@@ -13,12 +19,6 @@ import time
 import pickle
 import numpy as np
 from dotenv import load_dotenv
-import sys
-try:
-    __import__("pysqlite3")
-    sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
-except ImportError:
-    pass
 from langchain_groq import ChatGroq
 from crewai import Agent, Task, Crew, Process
 import faiss
@@ -1152,4 +1152,5 @@ def display_footer():
 if __name__ == "__main__":
     main()
     display_footer()
+
 
