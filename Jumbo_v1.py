@@ -13,8 +13,8 @@ import time
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from crewai import Agent, Task, Crew, Process
-import chromadb
-from chromadb.config import Settings
+import faiss
+import faiss
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
@@ -243,7 +243,7 @@ class EnhancedJumboMemory:
         self.collection_name = f"jumbo_memory_{hashlib.md5(user_id.encode()).hexdigest()}"
         try:
             os.makedirs(Config.MEMORY_DIR, exist_ok=True)
-            self.client = chromadb.Client(Settings(
+            self.client = faiss.IndexFlatL2(Settings(
                 persist_directory=Config.MEMORY_DIR,
                 is_persistent=True
             ))
