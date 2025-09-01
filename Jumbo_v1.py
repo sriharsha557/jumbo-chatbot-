@@ -1054,7 +1054,6 @@ def display_welcome_screen():
             """, unsafe_allow_html=True)
 
     # Welcome input section
-    st.markdown('<div class="input-section">', unsafe_allow_html=True)
     user_input = st.text_area(
         "Tell me what's on your mind...", 
         height=100, 
@@ -1152,6 +1151,7 @@ def display_footer():
 if __name__ == "__main__":
     main()
     display_footer()
+
 
 
 
