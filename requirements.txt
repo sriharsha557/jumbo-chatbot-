@@ -1,7 +1,7 @@
 streamlit>=1.38.0
 python-dotenv==1.0.1
 langchain==0.3.9
-langchain-core==0.3.26
+langchain-core==0.3.79
 langsmith>=0.1.125,<0.3
 langchain-groq==0.3.7
 crewai==0.175.0
