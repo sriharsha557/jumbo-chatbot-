@@ -3,14 +3,14 @@ Perfect 👍 since you’re using **Streamlit Secrets** for the API key, your `r
 Here’s a clean `requirements.txt` for your code:
 
 ```txt
-streamlit
-python-dotenv
-langchain-groq
-crewai
-chromadb
-plotly
-pandas
-textblob
+streamlit==1.37.1
+python-dotenv==1.0.1
+langchain-groq==0.0.2
+crewai==0.28.8
+chromadb==0.5.5
+plotly==5.23.0
+pandas==2.2.2
+textblob==0.18.0.post0
 ```
 
 ---
