@@ -1,19 +1,17 @@
 streamlit>=1.38.0
 python-dotenv>=1.0.1
-
 # LangChain ecosystem (modern + Groq)
 langchain>=0.3.13,<0.4.0
 langchain-core>=0.3.75,<0.4.0
 langsmith>=0.3.45,<0.4.0
 langchain-groq>=0.3.7,<0.4.0
-
 # CrewAI (latest stable)
 crewai<0.11
-
 # Vector DB (no sqlite dependency)
 faiss-cpu>=1.8.0,<2.0.0
-
 # Data & NLP utils
 plotly>=5.23.0,<6.0.0
 pandas>=2.2.3,<3.0.0
 textblob>=0.18.0.post0,<0.19.0
+# Additional dependencies for the fixed version
+numpy>=1.21.0,<2.0.0
