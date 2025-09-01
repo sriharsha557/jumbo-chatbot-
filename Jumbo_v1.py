@@ -1024,7 +1024,7 @@ def display_welcome_screen():
         
         with col1:
             # Try to load elephant GIF
-            elephant_gif_path = "images\elephant.gif"
+            elephant_gif_path = "images/elephant.gif"
             if os.path.exists(elephant_gif_path):
                 try:
                     with open(elephant_gif_path, "rb") as f:
@@ -1152,6 +1152,7 @@ def display_footer():
 if __name__ == "__main__":
     main()
     display_footer()
+
 
 
 
