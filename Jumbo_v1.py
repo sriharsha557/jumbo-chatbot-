@@ -928,7 +928,7 @@ def display_header():
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
 
     # Try to load the GIF banner
-    gif_path = r"D:\MOOD\CODE\images\Title.gif"
+    gif_path = "images\Title.gif"
     if os.path.exists(gif_path):
         try:
             with open(gif_path, "rb") as file:
@@ -1024,7 +1024,7 @@ def display_welcome_screen():
         
         with col1:
             # Try to load elephant GIF
-            elephant_gif_path = r"D:\MOOD\CODE\images\elephant.gif"
+            elephant_gif_path = "images\elephant.gif"
             if os.path.exists(elephant_gif_path):
                 try:
                     with open(elephant_gif_path, "rb") as f:
@@ -1152,5 +1152,6 @@ def display_footer():
 if __name__ == "__main__":
     main()
     display_footer()
+
 
 
