@@ -7,13 +7,16 @@ langchain-core>=0.3.75,<0.4.0
 langsmith>=0.3.45,<0.4.0
 langchain-groq>=0.3.7,<0.4.0
 
-# CrewAI (avoid Chroma dependency)
-crewai<0.11
+# CrewAI (latest, works with modern langchain)
+crewai>=0.28.0
 
-# Vector store
+# Vector DB (FAISS only)
 faiss-cpu>=1.8.0
 
-# Other dependencies
+# Fix sqlite issue with ChromaDB
+pysqlite3-binary
+
+# Other deps
 plotly>=5.24.1
 pandas>=2.2.2
 textblob>=0.18.0
