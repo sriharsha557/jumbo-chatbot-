@@ -14,7 +14,6 @@ from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from crewai import Agent, Task, Crew, Process
 import faiss
-import faiss
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
@@ -1020,3 +1019,4 @@ def display_footer():
 if __name__ == "__main__":
     main()
     display_footer()
+
