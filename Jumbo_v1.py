@@ -793,7 +793,7 @@ def setup_api_key_ui():
 st.markdown("""
 <style>
     .stApp {
-        background: linear-gradient(135deg, #E8F4FD 0%, #B8E0F5 100%);
+        background: white;
     }
 
     .gif-banner {
@@ -1151,9 +1151,3 @@ def display_footer():
 if __name__ == "__main__":
     main()
     display_footer()
-
-
-
-
-
-
