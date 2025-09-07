@@ -1349,7 +1349,7 @@ def display_header():
             with open(gif_path, "rb") as file:
                 gif_data = base64.b64encode(file.read()).decode()
                 st.markdown(f"""
-                <div style="text-align: center; margin: -20px -20px 10px -20px; height: 200px; overflow: hidden; border-radius: 10px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); position: relative;">
+                <div style="text-align: center; margin: -20px -20px 10px -20px; height: 200px; overflow: hidden; border-radius: 0px; box-shadow: 0 0px 0px rgba(0, 0, 0, 0); position: relative;">
                     <img src="data:image/gif;base64,{gif_data}" 
                          style="width: 100%; height: auto; display: block; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);" />
                 </div>
@@ -1637,3 +1637,4 @@ def display_conversation():
 if __name__ == "__main__":
     main()
     # Remove the duplicate display_conversation() call
+
