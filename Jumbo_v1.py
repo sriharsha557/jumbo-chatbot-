@@ -1516,9 +1516,7 @@ def display_welcome_screen():
                 <h3 style="color: #2c3e50; margin-top: 30px;">How are you feeling today?</h3>
             """, unsafe_allow_html=True)
 
-    # Welcome input section
-    st.markdown('<div class="input-section">', unsafe_allow_html=True)
-    
+       
     user_input = st.text_area(
         "Tell me what's on your mind...", 
         height=120, 
@@ -1637,4 +1635,5 @@ def display_conversation():
 if __name__ == "__main__":
     main()
     # Remove the duplicate display_conversation() call
+
 
