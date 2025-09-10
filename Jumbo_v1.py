@@ -116,6 +116,11 @@ JUMBO_RESPONSES = {
         "It sounds like things feel pretty overwhelming right now.",
         "Your pain is valid and real. I'm here to sit with you through this."
     ],
+    "lost": [
+        "It's okay to feel uncertain. Want to talk it out?",
+        "We all feel lost sometimes. What's confusing you?",
+        "Let's figure this out together. What's on your mind?"
+    ],
     "anxious": [
         "It sounds like your mind is racing with worry right now.",
         "You seem really unsettled about this. That anxiety must be exhausting.",
@@ -325,28 +330,26 @@ def _generate_response(self, user_message: str, user_name: Optional[str],
         )
         
         companion_task = Task(
-            description=f"""Create a warm, appropriate response as Jumbo.
+            description=f"""Create a warm, friendly response as Jumbo. Keep it short and natural!
 
             Message: '{user_message}'
-            User: {user_name or 'Unknown'}
-            Context: This appears to be a neutral/conversational message
+            Name: {user_name or 'Unknown'}
+            Mood: {mood}
 
-            {memory_context}
+            RULES:
+            1. Keep it to 1-2 short sentences + a question
+            2. Be warm and friendly, like chatting with a good friend
+            3. Use their name naturally if known
+            4. Keep it casual and conversational
+            5. Ask one simple follow-up question
+            6. Match their energy level
+            7. Avoid therapy-speak or clinical language
+            8. Be genuine and down-to-earth
 
-            RESPONSE GUIDELINES:
-            1. Be warm and friendly, not overly therapeutic
-            2. Use their name ({user_name}) if known
-            3. Respond to what they actually said
-            4. Keep it conversational and natural
-            5. Ask a gentle follow-up question
-            6. Don't assume they're in crisis
-            7. Match their energy level
-            8. Reference past conversations if relevant
-
-            Create a friendly, conversational response that acknowledges what they shared.""",
+            Think: How would a caring friend respond?""",
             agent=self.companion,
             context=[listen_task],
-            expected_output="Friendly, conversational response from Jumbo"
+            expected_output="Short, friendly response from Jumbo (1-2 sentences + question)"
         )
     else:
         # Use the original emotional support approach for clearly emotional content
@@ -396,23 +399,24 @@ def _generate_response(self, user_message: str, user_name: Optional[str],
             expected_output="Empathetic response from Jumbo addressing specific user content"
         )
     
-    summariser_task = Task(
-        description=f"""Ensure the response meets quality standards:
+    
+        summariser_task = Task(
+            description=f"""Polish the response but keep it brief and friendly:
 
-        Requirements:
-        1. Natural and conversational tone
-        2. Appropriate to the message type (introduction/greeting/emotional/neutral)
-        3. Uses their name ({user_name}) naturally if known
-        4. Ends with an appropriate follow-up question
-        5. Shows Jumbo's warm personality
-        6. Is concise but meaningful
-        7. Avoids over-dramatization
+            Requirements:
+            1. Maximum 2 sentences + 1 question
+            2. Super casual and friendly tone
+            3. No therapy-speak or formal language
+            4. Should sound like a text from a friend
+            5. Keep their name usage natural
+            6. End with a simple question
+            7. Make it feel warm and genuine
 
-        The response should make the user feel welcomed and understood.""",
-        agent=self.summariser,
-        context=[companion_task],
-        expected_output="Polished, appropriate response from Jumbo"
-    )
+            Goal: Make it feel like a quick, caring message from a friend.""",
+            agent=self.summariser,
+            context=[companion_task],
+            expected_output="Short, friendly message (2 sentences max + question)"
+        )
     
     # Create and execute crew
     crew = Crew(
@@ -1635,5 +1639,3 @@ def display_conversation():
 if __name__ == "__main__":
     main()
     # Remove the duplicate display_conversation() call
-
-
